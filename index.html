@@ -158,6 +158,22 @@ main{padding:0 16px}
 .set-btn + .set-btn{border-top:1px solid var(--line)}
 .set-btn.danger{color:var(--danger)}
 .set-btn svg{width:18px;height:18px;color:var(--muted)}
+.set-toggle{flex:1;min-width:0;display:flex;align-items:center;gap:12px;text-align:left}
+.set-toggle .name small{display:block;font-size:12px;color:var(--muted);font-weight:500}
+.chev{width:16px;height:16px;color:var(--muted);flex:none;transition:transform .2s}
+.chev.open{transform:rotate(90deg)}
+.set-row.child{padding-left:66px;background:var(--surface2);border-top:1px solid var(--line)}
+.set-row.child .name{font-size:14px}
+.sub-head{display:grid;grid-template-columns:1fr auto auto;align-items:center;column-gap:10px;row-gap:6px;width:100%;text-align:left;padding:11px 12px}
+.sub-head + .sub-head,.sub-entries + .sub-head{border-top:1px solid var(--line)}
+.sub-head .name{font-weight:600;font-size:14px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sub-head .name small{color:var(--muted);font-weight:500;font-size:12px;margin-left:6px}
+.sub-head .pct{font-size:12.5px;color:var(--muted);font-weight:600}
+.sub-head .a{font-weight:700;font-size:14px;min-width:84px;text-align:right}
+.sub-bar{grid-column:1/-1;height:4px;border-radius:9px;background:var(--line);overflow:hidden}
+.sub-bar i{display:block;height:100%;border-radius:9px}
+.sub-entries{background:var(--surface);margin:0 8px 8px;border-radius:10px}
+.sub-entries .ico{background:var(--surface2)}
 .note{font-size:12.5px;color:var(--muted);margin:10px 6px 0;line-height:1.6}
 
 /* 바텀시트 */
@@ -318,6 +334,7 @@ textarea.input{height:auto;min-height:120px;padding:12px 14px;resize:vertical;li
     <label class="field"><span class="lbl">사용처</span><input id="f-merchant" class="input" placeholder="예: 스타벅스" autocomplete="off"></label>
     <label class="field"><span class="lbl">날짜</span><input id="f-date" class="input" type="date"></label>
     <div class="field"><span class="lbl">카테고리</span><div class="chips" id="f-cats"></div></div>
+    <div class="field" id="f-subs" hidden><span class="lbl">세부 카테고리 (선택)</span><div class="chips" id="f-sub-chips"></div></div>
     <label class="field"><span class="lbl">메모 (선택)</span><input id="f-memo" class="input" autocomplete="off"></label>
     <label class="check"><input type="checkbox" id="f-refund"> 취소·환불 건 (합계에서 빼기)</label>
     <div class="sheet-actions"><button class="btn danger" id="entry-del">삭제</button><button class="btn primary" id="entry-save">저장</button></div>
@@ -346,7 +363,8 @@ textarea.input{height:auto;min-height:120px;padding:12px 14px;resize:vertical;li
       <label class="field" style="width:76px;flex:none"><span class="lbl">아이콘</span><input id="c-emoji" class="input" style="text-align:center;font-size:22px" maxlength="4" placeholder="🙂"></label>
       <label class="field" style="flex:1"><span class="lbl">이름</span><input id="c-name" class="input" maxlength="12" placeholder="예: 경조사" autocomplete="off"></label>
     </div>
-    <div class="field"><span class="lbl">색상</span><div class="swatches" id="c-colors"></div></div>
+    <label class="field" id="c-parent-field"><span class="lbl">상위 카테고리</span><select id="c-parent" class="input"></select></label>
+    <div class="field" id="c-color-field"><span class="lbl">색상</span><div class="swatches" id="c-colors"></div></div>
     <div class="sheet-actions"><button class="btn danger" id="cat-del">삭제</button><button class="btn primary" id="cat-save">저장</button></div>
   </div>
 </div>
@@ -360,7 +378,7 @@ const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const KEY = 'gagyebu.v1';
 const PALETTE = ['#FF8787','#FFA94D','#FFD43B','#A9E34B','#69DB7C','#38D9A9','#66D9E8','#4DABF7','#748FFC','#B197FC','#F783AC','#ADB5BD'];
-const UNCAT = { id: 'none', name: '미분류', emoji: '❔', color: '#ADB5BD' };
+const UNCAT = { id: 'none', name: '미분류', label: '미분류', emoji: '❔', color: '#ADB5BD' };
 const DEFAULT_CATS = [
   { id: 'food', name: '식비', emoji: '🍚', color: '#FF8787' },
   { id: 'cafe', name: '카페·간식', emoji: '☕', color: '#FFA94D' },
@@ -373,21 +391,49 @@ const DEFAULT_CATS = [
   { id: 'housing', name: '주거·공과금', emoji: '🏠', color: '#FFD43B' },
   { id: 'etc', name: '기타', emoji: '📦', color: '#A9E34B' },
 ];
-// 사용처 이름으로 카테고리 추측 (기본 카테고리가 남아 있을 때만)
+// 처음 설치할 때만 넣어 주는 하위 카테고리 (이미 쓰던 데이터에는 추가하지 않음)
+const DEFAULT_SUBS = [
+  ['food', 'food-out', '외식'], ['food', 'food-delivery', '배달'],
+  ['cafe', 'cafe-coffee', '커피'], ['cafe', 'cafe-snack', '간식·디저트'],
+  ['transport', 'transport-public', '대중교통'], ['transport', 'transport-taxi', '택시'], ['transport', 'transport-car', '주유·주차'],
+  ['living', 'living-mart', '마트'], ['living', 'living-conv', '편의점'], ['living', 'living-goods', '생활용품'],
+  ['shopping', 'shopping-online', '온라인'], ['shopping', 'shopping-fashion', '의류·잡화'],
+  ['health', 'health-hospital', '병원'], ['health', 'health-pharmacy', '약국'], ['health', 'health-fitness', '운동'],
+  ['culture', 'culture-show', '영화·공연'], ['culture', 'culture-book', '도서'], ['culture', 'culture-travel', '여행'],
+  ['telecom', 'telecom-phone', '통신비'], ['telecom', 'telecom-sub', '구독'],
+  ['housing', 'housing-fee', '관리비'], ['housing', 'housing-util', '공과금'],
+];
+// 사용처 이름으로 카테고리 추측: 앞쪽 id부터 남아 있는 카테고리를 고른다 (하위 → 상위 순)
 const KEYWORDS = [
-  ['cafe', /스타벅스|커피|카페|투썸|이디야|메가엠지씨|메가커피|컴포즈|빽다방|폴바셋|할리스|파스쿠찌|베이커리|파리바게|뚜레쥬르|배스킨|던킨|설빙|공차|디저트|도넛/i],
-  ['food', /식당|김밥|맥도날드|버거|롯데리아|KFC|맘스터치|피자|치킨|교촌|BBQ|bhc|배달의민족|우아한형제|배민|요기요|쿠팡이츠|분식|국밥|한식|중식|일식|초밥|고기|정육식당|푸드|레스토랑|떡볶이|도시락/i],
-  ['transport', /택시|카카오T|카카오모빌|티머니|교통|버스|지하철|철도|코레일|KTX|SRT|주유|칼텍스|SK에너지|S-?OIL|오일뱅크|주차|하이패스|쏘카|그린카|따릉이/i],
-  ['living', /이마트|홈플러스|롯데마트|코스트코|트레이더스|GS25|지에스25|CU|씨유|세븐일레븐|이마트24|미니스톱|다이소|마트|올리브영|하나로|식자재|노브랜드/i],
-  ['shopping', /쿠팡|11번가|G마켓|지마켓|옥션|무신사|SSG|에스에스지|29CM|지그재그|에이블리|백화점|아울렛|유니클로|자라|ZARA|H&M|네이버페이|컬리|마켓컬리|알리익스프레스|테무|AMAZON/i],
-  ['health', /병원|의원|약국|치과|한의원|안과|피부과|내과|정형외과|이비인후과|소아과|헬스|필라테스|요가/i],
-  ['culture', /CGV|롯데시네마|메가박스|영화|노래|PC방|피씨방|yes24|예스24|교보|알라딘|서점|인터파크|티켓|볼링|놀이공원/i],
-  ['telecom', /SKT|에스케이텔레콤|KT|케이티|LG\s*U\+|유플러스|넷플릭스|NETFLIX|유튜브|YOUTUBE|GOOGLE|구글|APPLE|애플|디즈니|티빙|웨이브|왓챠|멜론|스포티파이|SPOTIFY|와우멤버십|구독/i],
-  ['housing', /관리비|전기|가스|수도|도시가스|한국전력|한전|월세|아파트/i],
+  [['food-delivery', 'food'], /배달의민족|우아한형제|배민|요기요|쿠팡이츠|땡겨요/i],
+  [['cafe-coffee', 'cafe'], /스타벅스|커피|카페|투썸|이디야|메가엠지씨|메가커피|컴포즈|빽다방|폴바셋|할리스|파스쿠찌|공차/i],
+  [['cafe-snack', 'cafe'], /베이커리|파리바게|뚜레쥬르|배스킨|던킨|설빙|디저트|도넛/i],
+  [['food-out', 'food'], /식당|김밥|맥도날드|버거|롯데리아|KFC|맘스터치|피자|치킨|교촌|BBQ|bhc|분식|국밥|한식|중식|일식|초밥|고기|푸드|레스토랑|떡볶이|도시락/i],
+  [['transport-taxi', 'transport'], /택시|카카오T|카카오모빌/i],
+  [['transport-car', 'transport'], /주유|칼텍스|SK에너지|S-?OIL|오일뱅크|주차|하이패스|쏘카|그린카/i],
+  [['transport-public', 'transport'], /티머니|교통|버스|지하철|철도|코레일|KTX|SRT|따릉이/i],
+  [['living-conv', 'living'], /GS25|지에스25|CU|씨유|세븐일레븐|이마트24|미니스톱/i],
+  [['living-goods', 'living'], /다이소|올리브영/i],
+  [['living-mart', 'living'], /이마트|홈플러스|롯데마트|코스트코|트레이더스|마트|하나로|식자재|노브랜드/i],
+  [['shopping-fashion', 'shopping'], /무신사|29CM|지그재그|에이블리|유니클로|자라|ZARA|H&M|아울렛|백화점/i],
+  [['shopping-online', 'shopping'], /쿠팡|11번가|G마켓|지마켓|옥션|SSG|에스에스지|네이버페이|컬리|알리익스프레스|테무|AMAZON/i],
+  [['health-pharmacy', 'health'], /약국/i],
+  [['health-fitness', 'health'], /헬스|필라테스|요가|피트니스/i],
+  [['health-hospital', 'health'], /병원|의원|치과|한의원|안과|피부과|내과|정형외과|이비인후과|소아과/i],
+  [['culture-show', 'culture'], /CGV|롯데시네마|메가박스|영화|인터파크|티켓/i],
+  [['culture-book', 'culture'], /yes24|예스24|교보|알라딘|서점/i],
+  [['culture', 'culture'], /노래|PC방|피씨방|볼링|놀이공원/i],
+  [['telecom-sub', 'telecom'], /넷플릭스|NETFLIX|유튜브|YOUTUBE|GOOGLE|구글|APPLE|애플|디즈니|티빙|웨이브|왓챠|멜론|스포티파이|SPOTIFY|와우멤버십|구독/i],
+  [['telecom-phone', 'telecom'], /SKT|에스케이텔레콤|KT|케이티|LG\s*U\+|유플러스/i],
+  [['housing-fee', 'housing'], /관리비|월세|아파트/i],
+  [['housing-util', 'housing'], /전기|가스|수도|도시가스|한국전력|한전/i],
 ];
 
 /* ---------- 저장소 ---------- */
-function fresh() { return { v: 1, categories: DEFAULT_CATS.map(c => ({ ...c })), entries: [], merchantMap: {} }; }
+function fresh() {
+  const subs = DEFAULT_SUBS.map(([parentId, id, name]) => ({ id, name, emoji: '', parentId }));
+  return { v: 2, categories: [...DEFAULT_CATS.map(c => ({ ...c })), ...subs], entries: [], merchantMap: {} };
+}
 function load() {
   try {
     const d = JSON.parse(localStorage.getItem(KEY));
@@ -420,15 +466,35 @@ function hexA(hex, a) {
   const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
   return `rgba(${r},${g},${b},${a})`;
 }
-const catById = id => db.categories.find(c => c.id === id) || UNCAT;
+const catRaw = id => db.categories.find(c => c.id === id);
 const catExists = id => db.categories.some(c => c.id === id);
+const topCats = () => db.categories.filter(c => !c.parentId);
+const childrenOf = id => db.categories.filter(c => c.parentId === id);
+// 하위 카테고리는 상위의 색을 쓰고, 아이콘이 없으면 상위 아이콘을 쓴다
+function catById(id) {
+  const c = catRaw(id);
+  if (!c) return UNCAT;
+  if (!c.parentId) return { ...c, label: c.name };
+  const p = catRaw(c.parentId) || UNCAT;
+  return { ...c, color: p.color, emoji: c.emoji || p.emoji, label: `${p.name} › ${c.name}` };
+}
+// 상위 카테고리 id (하위면 그 상위, 없는 카테고리면 'none')
+function topIdOf(id) {
+  const c = catRaw(id);
+  if (!c) return 'none';
+  return c.parentId ? (catExists(c.parentId) ? c.parentId : 'none') : c.id;
+}
 const normM = s => String(s || '').replace(/\s+/g, '').toLowerCase();
 function guessCategory(merchant) {
   const k = normM(merchant);
   if (!k) return 'none';
   const learned = db.merchantMap[k];
   if (learned && catExists(learned)) return learned;
-  for (const [id, re] of KEYWORDS) if (re.test(merchant) && catExists(id)) return id;
+  for (const [ids, re] of KEYWORDS) {
+    if (!re.test(merchant)) continue;
+    const hit = ids.find(catExists);
+    if (hit) return hit;
+  }
   return 'none';
 }
 function learn(merchant, catId) {
@@ -451,7 +517,7 @@ function toast(msg) {
 
 /* ---------- 화면 상태 ---------- */
 const now = new Date();
-const ui = { y: now.getFullYear(), m: now.getMonth(), sel: ymd(now), tab: 'cal', mode: 'month', openCat: null };
+const ui = { y: now.getFullYear(), m: now.getMonth(), sel: ymd(now), tab: 'cal', mode: 'month', openCat: null, openSub: null, setOpen: new Set() };
 
 function render() {
   $('#top-month').hidden = ui.tab === 'set';
@@ -471,7 +537,9 @@ function render() {
 
 function entryRow(e, opts = {}) {
   const c = catById(e.categoryId);
-  const meta = [opts.dayIcon ? dateLabel(e.date).split(' ').pop() : opts.showDate ? dateLabel(e.date) : c.name, e.time, e.card, e.memo].filter(Boolean).map(esc).join(' · ');
+  const when = opts.dayIcon ? dateLabel(e.date).split(' ').pop() : opts.showDate ? dateLabel(e.date) : '';
+  const what = opts.showDate ? (opts.noCat ? '' : c.name) : c.label;
+  const meta = [when, what, e.time, e.card, e.memo].filter(Boolean).map(esc).join(' · ');
   const neg = e.amount < 0;
   const icon = opts.dayIcon
     ? `<span class="ico num">${Number(e.date.slice(8))}</span>`
@@ -532,7 +600,7 @@ function shiftMonth(delta) {
     const d = new Date(ui.y, ui.m + delta, 1);
     ui.y = d.getFullYear(); ui.m = d.getMonth();
   }
-  ui.openCat = null;
+  ui.openCat = null; ui.openSub = null;
   render();
 }
 
@@ -548,7 +616,7 @@ function renderStats() {
 
   const groups = {};
   list.forEach(e => {
-    const id = catExists(e.categoryId) ? e.categoryId : 'none';
+    const id = topIdOf(e.categoryId);
     (groups[id] = groups[id] || []).push(e);
   });
   const rows = Object.entries(groups).map(([id, es]) => ({ c: catById(id), es, total: sum(es) })).sort((a, b) => b.total - a.total);
@@ -577,24 +645,66 @@ function renderStats() {
         <span class="pct num">${pct}%</span>
         <span class="a num">${fmt(r.total)}원</span>
       </button>
-      ${open ? `<div class="cat-detail">${sortEntries(r.es.slice()).map(e => entryRow(e, { showDate: true, dayIcon: !year })).join('')}</div>` : ''}
+      ${open ? statsDetail(r, year) : ''}
     </div>`;
   }).join('');
 }
 
+// 상위 카테고리를 펼치면: 세부 카테고리별 합계 → 누르면 그 세부의 내역
+function statsDetail(r, year) {
+  const entryList = es => sortEntries(es.slice()).map(e => entryRow(e, { showDate: true, dayIcon: !year, noCat: true })).join('');
+  const subs = r.c.id === 'none' ? [] : childrenOf(r.c.id);
+  const g = {};
+  r.es.forEach(e => {
+    const c = catRaw(e.categoryId);
+    const k = c && c.parentId === r.c.id ? e.categoryId : '_direct';
+    (g[k] = g[k] || []).push(e);
+  });
+  if (!subs.length || (Object.keys(g).length === 1 && g._direct)) return `<div class="cat-detail">${entryList(r.es)}</div>`;
+  const subRows = Object.entries(g).map(([k, es]) => {
+    const c = k === '_direct' ? null : catRaw(k);
+    return { k, name: c ? c.name : '세부 미지정', emoji: c ? c.emoji : '', es, total: sum(es) };
+  }).sort((a, b) => (a.k === '_direct') - (b.k === '_direct') || b.total - a.total);
+  const pos = subRows.reduce((t, x) => t + Math.max(0, x.total), 0) || 1;
+  return `<div class="cat-detail">` + subRows.map(x => {
+    const key = r.c.id + ':' + x.k, open = ui.openSub === key;
+    const pct = Math.round(Math.max(0, x.total) / pos * 100);
+    return `<button class="sub-head" data-sub="${esc(key)}" aria-expanded="${open}">
+        <span class="name">${x.emoji ? esc(x.emoji) + ' ' : ''}${esc(x.name)}<small>${x.es.length}건</small></span>
+        <span class="pct num">${pct}%</span><span class="a num">${fmt(x.total)}원</span>
+        <span class="sub-bar"><i style="width:${pct}%;background:${r.c.color}"></i></span>
+      </button>${open ? `<div class="sub-entries">${entryList(x.es)}</div>` : ''}`;
+  }).join('') + `</div>`;
+}
+
 /* ---------- 설정 ---------- */
 function renderSettings() {
-  const counts = {};
-  db.entries.forEach(e => { counts[e.categoryId] = (counts[e.categoryId] || 0) + 1; });
-  const unc = db.entries.filter(e => !catExists(e.categoryId)).length;
+  const own = {}, top = {};
+  db.entries.forEach(e => {
+    own[e.categoryId] = (own[e.categoryId] || 0) + 1;
+    const t = topIdOf(e.categoryId); top[t] = (top[t] || 0) + 1;
+  });
   const editIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
   const delIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg>';
-  $('#cat-list').innerHTML = db.categories.map(c => `<div class="set-row">
-      <span class="ico" style="background:${hexA(c.color, .22)}">${esc(c.emoji)}</span>
-      <span class="name">${esc(c.name)}</span><span class="cnt num">${counts[c.id] || 0}건</span>
+  const plusIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
+  const chev = open => `<svg class="chev ${open ? 'open' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>`;
+  $('#cat-list').innerHTML = topCats().map(c => {
+    const kids = childrenOf(c.id), open = ui.setOpen.has(c.id);
+    return `<div class="set-row">
+      <button class="set-toggle" data-toggle="${c.id}" aria-expanded="${open}">
+        <span class="ico" style="background:${hexA(c.color, .22)}">${esc(c.emoji)}</span>
+        <span class="name">${esc(c.name)}<small>${kids.length ? `세부 ${kids.length}개` : '세부 없음'} · ${top[c.id] || 0}건</small></span>
+        ${chev(open)}
+      </button>
+      <button class="icon-btn" data-addsub="${c.id}" aria-label="${esc(c.name)}에 세부 카테고리 추가">${plusIcon}</button>
       <button class="icon-btn" data-edit="${c.id}" aria-label="${esc(c.name)} 수정">${editIcon}</button>
       <button class="icon-btn del" data-del="${c.id}" aria-label="${esc(c.name)} 삭제">${delIcon}</button>
-    </div>`).join('') + `<div class="set-row"><span class="ico" style="background:${hexA(UNCAT.color, .22)}">${UNCAT.emoji}</span><span class="name">${UNCAT.name}</span><span class="cnt num">${unc}건</span><span style="width:80px;font-size:12px;color:var(--muted);text-align:center">기본</span></div>`;
+    </div>` + (open ? kids.map(k => `<div class="set-row child">
+      <span class="name">${k.emoji ? esc(k.emoji) + ' ' : ''}${esc(k.name)}</span><span class="cnt num">${own[k.id] || 0}건</span>
+      <button class="icon-btn" data-edit="${k.id}" aria-label="${esc(k.name)} 수정">${editIcon}</button>
+      <button class="icon-btn del" data-del="${k.id}" aria-label="${esc(k.name)} 삭제">${delIcon}</button>
+    </div>`).join('') + (kids.length ? '' : `<div class="set-row child"><span class="name" style="color:var(--muted);font-weight:500">＋ 버튼으로 세부 카테고리를 추가하세요</span></div>`) : '');
+  }).join('') + `<div class="set-row"><span class="set-toggle"><span class="ico" style="background:${hexA(UNCAT.color, .22)}">${UNCAT.emoji}</span><span class="name">${UNCAT.name}<small>기본 · ${top.none || 0}건</small></span></span></div>`;
   $('#data-note').innerHTML = `기록 ${fmt(db.entries.length)}건이 이 휴대폰 안에만 저장돼 있어요. 휴대폰을 바꾸거나 앱을 지우기 전에는 꼭 <b>백업 파일 내보내기</b>를 해 주세요.`;
 }
 
@@ -623,9 +733,15 @@ $$('.sheet').forEach(s => s.addEventListener('click', e => {
 
 /* ---------- 지출 입력/수정 ---------- */
 let editing = null, pickedCat = 'none', catTouched = false;
-function renderCatChips(container, selected) {
-  container.innerHTML = [...db.categories, UNCAT].map(c =>
-    `<button type="button" class="chip" data-cat="${c.id}" aria-pressed="${c.id === selected}">${esc(c.emoji)} ${esc(c.name)}</button>`).join('');
+const chipHtml = (id, emoji, name, on) => `<button type="button" class="chip" data-cat="${id}" aria-pressed="${on}">${emoji ? esc(emoji) + ' ' : ''}${esc(name)}</button>`;
+function renderEntryCats() {
+  const top = topIdOf(pickedCat);
+  $('#f-cats').innerHTML = [...topCats(), UNCAT].map(c => chipHtml(c.id, c.emoji, c.name, c.id === top)).join('');
+  const subs = top === 'none' ? [] : childrenOf(top);
+  $('#f-subs').hidden = !subs.length;
+  $('#f-sub-chips').innerHTML = subs.length
+    ? [chipHtml(top, '', '선택 안 함', pickedCat === top), ...subs.map(c => chipHtml(c.id, c.emoji, c.name, pickedCat === c.id))].join('')
+    : '';
 }
 function openEntry(entry, date) {
   editing = entry || null;
@@ -637,7 +753,7 @@ function openEntry(entry, date) {
   $('#f-refund').checked = entry ? entry.amount < 0 : false;
   pickedCat = entry ? (catExists(entry.categoryId) ? entry.categoryId : 'none') : 'none';
   catTouched = !!entry;
-  renderCatChips($('#f-cats'), pickedCat);
+  renderEntryCats();
   $('#entry-del').hidden = !entry;
   if ($('#sheet-choose').classList.contains('open')) swapSheet('sheet-choose', 'sheet-entry');
   else openSheet('sheet-entry');
@@ -650,13 +766,13 @@ $('#f-amount').addEventListener('input', e => {
 $('#f-merchant').addEventListener('input', e => {
   if (catTouched) return;
   pickedCat = guessCategory(e.target.value);
-  $$('#f-cats .chip').forEach(c => c.setAttribute('aria-pressed', String(c.dataset.cat === pickedCat)));
+  renderEntryCats();
 });
-$('#f-cats').addEventListener('click', e => {
+['#f-cats', '#f-sub-chips'].forEach(sel => $(sel).addEventListener('click', e => {
   const b = e.target.closest('.chip'); if (!b) return;
   pickedCat = b.dataset.cat; catTouched = true;
-  $$('#f-cats .chip').forEach(c => c.setAttribute('aria-pressed', String(c === b)));
-});
+  renderEntryCats();
+}));
 $('#entry-save').addEventListener('click', () => {
   const amt = +$('#f-amount').value.replace(/\D/g, '');
   const date = $('#f-date').value;
@@ -711,7 +827,8 @@ function analyze() {
 function renderParsed() {
   const box = $('#sms-results');
   if (!parsed.length) { box.innerHTML = ''; updateSmsSave(); return; }
-  const opts = id => [...db.categories, UNCAT].map(c => `<option value="${c.id}" ${c.id === id ? 'selected' : ''}>${esc(c.emoji)} ${esc(c.name)}</option>`).join('');
+  const opts = id => [...topCats().flatMap(t => [t, ...childrenOf(t.id)]), UNCAT].map(c =>
+    `<option value="${c.id}" ${c.id === id ? 'selected' : ''}>${c.parentId ? '\u3000└ ' + esc(c.name) : esc(c.emoji) + ' ' + esc(c.name)}</option>`).join('');
   box.innerHTML = `<div class="results-head"><span>찾은 내역 ${parsed.length}건</span><span>체크한 건만 저장돼요</span></div>` +
     parsed.map((p, i) => {
       const badges = [];
@@ -798,17 +915,33 @@ $('#sms-save').addEventListener('click', () => {
 
 /* ---------- 카테고리 관리 ---------- */
 let editingCat = null, pickedColor = PALETTE[0];
-function openCat(cat) {
+function syncCatSheet() {
+  const isSub = !!$('#c-parent').value;
+  $('#c-color-field').hidden = isSub;
+  $('#c-emoji').placeholder = isSub ? '선택' : '🙂';
+  $('#c-name').placeholder = isSub ? '예: 외식' : '예: 경조사';
+}
+function openCat(cat, parentId) {
   editingCat = cat || null;
-  $('#cat-title').textContent = cat ? '카테고리 수정' : '카테고리 추가';
+  const pid = cat ? (cat.parentId || '') : (parentId || '');
+  $('#cat-title').textContent = cat ? (cat.parentId ? '세부 카테고리 수정' : '카테고리 수정') : (pid ? '세부 카테고리 추가' : '카테고리 추가');
   $('#c-emoji').value = cat ? cat.emoji : '';
   $('#c-name').value = cat ? cat.name : '';
-  const used = new Set(db.categories.map(c => c.color));
-  pickedColor = cat ? cat.color : (PALETTE.find(p => !used.has(p)) || PALETTE[0]);
+  // 하위가 있는 상위 카테고리는 다른 카테고리 아래로 옮길 수 없음 (2단계까지만)
+  const hasKids = cat && childrenOf(cat.id).length > 0;
+  $('#c-parent-field').hidden = !!hasKids;
+  $('#c-parent').innerHTML = `<option value="">없음 (상위 카테고리)</option>` +
+    topCats().filter(t => !cat || t.id !== cat.id).map(t => `<option value="${t.id}">${esc(t.emoji)} ${esc(t.name)}</option>`).join('');
+  $('#c-parent').value = pid;
+  const used = new Set(topCats().map(c => c.color));
+  pickedColor = cat && cat.color ? cat.color : (PALETTE.find(p => !used.has(p)) || PALETTE[0]);
   $('#c-colors').innerHTML = PALETTE.map(p => `<button type="button" class="sw" data-color="${p}" style="background:${p}" aria-pressed="${p === pickedColor}" aria-label="색상 ${p}"></button>`).join('');
   $('#cat-del').hidden = !cat;
+  syncCatSheet();
   openSheet('sheet-cat');
+  if (!cat) setTimeout(() => $('#c-name').focus(), 300);
 }
+$('#c-parent').addEventListener('change', syncCatSheet);
 $('#c-colors').addEventListener('click', e => {
   const b = e.target.closest('.sw'); if (!b) return;
   pickedColor = b.dataset.color;
@@ -816,30 +949,63 @@ $('#c-colors').addEventListener('click', e => {
 });
 $('#cat-save').addEventListener('click', () => {
   const name = $('#c-name').value.trim();
+  const parentId = $('#c-parent-field').hidden ? '' : $('#c-parent').value;
   if (!name) { toast('이름을 입력해 주세요'); $('#c-name').focus(); return; }
-  if (name === UNCAT.name || db.categories.some(c => c.name === name && c !== editingCat)) { toast('이미 있는 이름이에요'); return; }
-  const emoji = $('#c-emoji').value.trim() || '🏷️';
-  if (editingCat) Object.assign(editingCat, { name, emoji, color: pickedColor });
-  else db.categories.push({ id: 'c' + uid(), name, emoji, color: pickedColor });
+  const siblings = db.categories.filter(c => (c.parentId || '') === parentId && c !== editingCat);
+  if ((!parentId && name === UNCAT.name) || siblings.some(c => c.name === name)) { toast('같은 이름이 이미 있어요'); return; }
+  const emoji = $('#c-emoji').value.trim() || (parentId ? '' : '🏷️');
+  const data = { name, emoji };
+  if (parentId) data.parentId = parentId; else data.color = pickedColor;
+  if (editingCat) {
+    Object.assign(editingCat, data);
+    if (!parentId) delete editingCat.parentId;
+  } else {
+    db.categories.push({ id: 'c' + uid(), ...data });
+  }
+  if (parentId) ui.setOpen.add(parentId);
   save(); closeSheet(); render();
-  toast(editingCat ? '카테고리를 수정했어요' : `'${name}' 카테고리를 추가했어요`);
+  toast(editingCat ? '수정했어요' : `'${name}'을(를) 추가했어요`);
 });
 function deleteCat(cat) {
-  const n = db.entries.filter(e => e.categoryId === cat.id).length;
-  const msg = n ? `'${cat.name}' 카테고리를 삭제할까요?\n이 카테고리의 지출 ${n}건은 '미분류'로 옮겨져요.` : `'${cat.name}' 카테고리를 삭제할까요?`;
-  if (!confirm(msg)) return false;
-  db.categories = db.categories.filter(c => c !== cat);
-  db.entries.forEach(e => { if (e.categoryId === cat.id) e.categoryId = 'none'; });
-  Object.keys(db.merchantMap).forEach(k => { if (db.merchantMap[k] === cat.id) delete db.merchantMap[k]; });
+  if (cat.parentId) {
+    // 세부 카테고리 삭제: 그 내역은 상위 카테고리로 옮김
+    const parent = catRaw(cat.parentId);
+    const n = db.entries.filter(e => e.categoryId === cat.id).length;
+    const msg = `'${parent ? parent.name + ' › ' : ''}${cat.name}'을(를) 삭제할까요?` + (n ? `\n이 세부 카테고리의 지출 ${n}건은 '${parent ? parent.name : '미분류'}'(으)로 옮겨져요.` : '');
+    if (!confirm(msg)) return false;
+    const to = parent ? parent.id : 'none';
+    db.categories = db.categories.filter(c => c !== cat);
+    db.entries.forEach(e => { if (e.categoryId === cat.id) e.categoryId = to; });
+    Object.keys(db.merchantMap).forEach(k => { if (db.merchantMap[k] === cat.id) db.merchantMap[k] = to; });
+  } else {
+    // 상위 카테고리 삭제: 세부 카테고리도 함께 삭제, 내역은 미분류로
+    const kids = childrenOf(cat.id);
+    const ids = new Set([cat.id, ...kids.map(k => k.id)]);
+    const n = db.entries.filter(e => ids.has(e.categoryId)).length;
+    let msg = `'${cat.name}' 카테고리를 삭제할까요?`;
+    if (kids.length) msg += `\n세부 카테고리 ${kids.length}개도 함께 삭제돼요.`;
+    if (n) msg += `\n지출 ${n}건은 '미분류'로 옮겨져요.`;
+    if (!confirm(msg)) return false;
+    db.categories = db.categories.filter(c => !ids.has(c.id));
+    db.entries.forEach(e => { if (ids.has(e.categoryId)) e.categoryId = 'none'; });
+    Object.keys(db.merchantMap).forEach(k => { if (ids.has(db.merchantMap[k])) delete db.merchantMap[k]; });
+  }
   save(); render(); toast('삭제했어요');
   return true;
 }
 $('#cat-del').addEventListener('click', () => { if (editingCat && deleteCat(editingCat)) closeSheet(); });
 $('#cat-add').addEventListener('click', () => openCat());
 $('#cat-list').addEventListener('click', e => {
+  const tg = e.target.closest('[data-toggle]'), add = e.target.closest('[data-addsub]');
   const ed = e.target.closest('[data-edit]'), dl = e.target.closest('[data-del]');
-  if (ed) openCat(db.categories.find(c => c.id === ed.dataset.edit));
-  if (dl) deleteCat(db.categories.find(c => c.id === dl.dataset.del));
+  if (tg) {
+    const id = tg.dataset.toggle;
+    ui.setOpen.has(id) ? ui.setOpen.delete(id) : ui.setOpen.add(id);
+    renderSettings();
+  }
+  if (add) openCat(null, add.dataset.addsub);
+  if (ed) openCat(catRaw(ed.dataset.edit));
+  if (dl) deleteCat(catRaw(dl.dataset.del));
 });
 
 /* ---------- 백업 ---------- */
@@ -877,7 +1043,7 @@ $('#reset-btn').addEventListener('click', () => {
 $('#prev').addEventListener('click', () => shiftMonth(-1));
 $('#next').addEventListener('click', () => shiftMonth(1));
 $('#today-btn').addEventListener('click', () => {
-  const t = new Date(); ui.y = t.getFullYear(); ui.m = t.getMonth(); ui.sel = ymd(t); ui.openCat = null; render();
+  const t = new Date(); ui.y = t.getFullYear(); ui.m = t.getMonth(); ui.sel = ymd(t); ui.openCat = null; ui.openSub = null; render();
 });
 $('#month-label').addEventListener('click', () => {
   if (ui.tab !== 'cal') return;
@@ -885,7 +1051,7 @@ $('#month-label').addEventListener('click', () => {
   ui.sel = ui.sel.startsWith(p) ? '' : (ymd(new Date()).startsWith(p) ? ymd(new Date()) : p + '01');
   render();
 });
-$$('.tab').forEach(t => t.addEventListener('click', () => { ui.tab = t.dataset.tab; ui.openCat = null; render(); window.scrollTo(0, 0); }));
+$$('.tab').forEach(t => t.addEventListener('click', () => { ui.tab = t.dataset.tab; ui.openCat = null; ui.openSub = null; render(); window.scrollTo(0, 0); }));
 $('#cal-grid').addEventListener('click', e => {
   const d = e.target.closest('.day[data-date]'); if (!d) return;
   ui.sel = ui.sel === d.dataset.date ? '' : d.dataset.date;
@@ -897,14 +1063,17 @@ document.addEventListener('click', e => {
   if (en) openEntry(en);
 });
 $('#stats-list').addEventListener('click', e => {
+  const sh = e.target.closest('.sub-head');
+  if (sh) { ui.openSub = ui.openSub === sh.dataset.sub ? null : sh.dataset.sub; renderStats(); return; }
   const h = e.target.closest('.cat-head'); if (!h) return;
   ui.openCat = ui.openCat === h.dataset.cat ? null : h.dataset.cat;
+  ui.openSub = null;
   renderStats();
 });
-$$('.seg button').forEach(b => b.addEventListener('click', () => { ui.mode = b.dataset.mode; ui.openCat = null; render(); }));
+$$('.seg button').forEach(b => b.addEventListener('click', () => { ui.mode = b.dataset.mode; ui.openCat = null; ui.openSub = null; render(); }));
 $('#stats-months').addEventListener('click', e => {
   const b = e.target.closest('.mbar'); if (!b) return;
-  ui.m = +b.dataset.month; ui.mode = 'month'; ui.openCat = null; render();
+  ui.m = +b.dataset.month; ui.mode = 'month'; ui.openCat = null; ui.openSub = null; render();
 });
 $('#fab').addEventListener('click', () => openSheet('sheet-choose'));
 $('#choose-sms').addEventListener('click', () => openSms(''));
