@@ -164,6 +164,11 @@ main{padding:0 16px}
 .chev.open{transform:rotate(90deg)}
 .set-row.child{padding-left:66px;background:var(--surface2);border-top:1px solid var(--line)}
 .set-row.child .name{font-size:14px}
+.sec-btns{display:flex;gap:6px}
+#cat-order[aria-pressed="true"]{background:var(--accent);color:#fff}
+.order-hint{margin:-2px 4px 8px;font-size:12.5px;color:var(--muted);line-height:1.5}
+.set-row .icon-btn.mv{color:var(--accent)}
+.set-row .icon-btn.mv:disabled{opacity:.25}
 .sub-head{display:grid;grid-template-columns:1fr auto auto;align-items:center;column-gap:10px;row-gap:6px;width:100%;text-align:left;padding:11px 12px}
 .sub-head + .sub-head,.sub-entries + .sub-head{border-top:1px solid var(--line)}
 .sub-head .name{font-weight:600;font-size:14px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -292,7 +297,8 @@ textarea.input{height:auto;min-height:120px;padding:12px 14px;resize:vertical;li
 
     <!-- 설정 -->
     <section class="view" id="view-set" hidden>
-      <div class="sec-title"><h2>지출 카테고리</h2><button class="btn small soft" id="cat-add">+ 추가</button></div>
+      <div class="sec-title"><h2>지출 카테고리</h2><span class="sec-btns"><button class="btn small" id="cat-order">순서 변경</button><button class="btn small soft" id="cat-add">+ 추가</button></span></div>
+      <p class="order-hint" id="order-hint" hidden>▲▼ 버튼으로 순서를 바꿔요. 세부 카테고리는 상위를 눌러 펼친 뒤 바꿀 수 있어요.</p>
       <div class="card set-list" id="cat-list" style="padding:4px 0"></div>
       <div class="sec-title"><h2>데이터</h2></div>
       <div class="card" style="padding:0">
@@ -517,7 +523,7 @@ function toast(msg) {
 
 /* ---------- 화면 상태 ---------- */
 const now = new Date();
-const ui = { y: now.getFullYear(), m: now.getMonth(), sel: ymd(now), tab: 'cal', mode: 'month', openCat: null, openSub: null, setOpen: new Set() };
+const ui = { y: now.getFullYear(), m: now.getMonth(), sel: ymd(now), tab: 'cal', mode: 'month', openCat: null, openSub: null, setOpen: new Set(), reorder: false };
 
 function render() {
   $('#top-month').hidden = ui.tab === 'set';
@@ -688,7 +694,21 @@ function renderSettings() {
   const delIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg>';
   const plusIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
   const chev = open => `<svg class="chev ${open ? 'open' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>`;
-  $('#cat-list').innerHTML = topCats().map(c => {
+  const upIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>';
+  const downIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+  const ord = ui.reorder;
+  $('#cat-order').setAttribute('aria-pressed', String(ord));
+  $('#cat-order').textContent = ord ? '완료' : '순서 변경';
+  $('#cat-add').hidden = ord;
+  $('#order-hint').hidden = !ord;
+  // 순서 변경 중이면 ▲▼, 아니면 추가/수정/삭제 버튼
+  const btns = (c, i, n, extra) => ord
+    ? `<button class="icon-btn mv" data-move="${c.id}" data-dir="-1" aria-label="${esc(c.name)} 위로" ${i === 0 ? 'disabled' : ''}>${upIcon}</button>
+       <button class="icon-btn mv" data-move="${c.id}" data-dir="1" aria-label="${esc(c.name)} 아래로" ${i === n - 1 ? 'disabled' : ''}>${downIcon}</button>`
+    : `${extra || ''}<button class="icon-btn" data-edit="${c.id}" aria-label="${esc(c.name)} 수정">${editIcon}</button>
+       <button class="icon-btn del" data-del="${c.id}" aria-label="${esc(c.name)} 삭제">${delIcon}</button>`;
+  const tops = topCats();
+  $('#cat-list').innerHTML = tops.map((c, i) => {
     const kids = childrenOf(c.id), open = ui.setOpen.has(c.id);
     return `<div class="set-row">
       <button class="set-toggle" data-toggle="${c.id}" aria-expanded="${open}">
@@ -696,14 +716,11 @@ function renderSettings() {
         <span class="name">${esc(c.name)}<small>${kids.length ? `세부 ${kids.length}개` : '세부 없음'} · ${top[c.id] || 0}건</small></span>
         ${chev(open)}
       </button>
-      <button class="icon-btn" data-addsub="${c.id}" aria-label="${esc(c.name)}에 세부 카테고리 추가">${plusIcon}</button>
-      <button class="icon-btn" data-edit="${c.id}" aria-label="${esc(c.name)} 수정">${editIcon}</button>
-      <button class="icon-btn del" data-del="${c.id}" aria-label="${esc(c.name)} 삭제">${delIcon}</button>
-    </div>` + (open ? kids.map(k => `<div class="set-row child">
-      <span class="name">${k.emoji ? esc(k.emoji) + ' ' : ''}${esc(k.name)}</span><span class="cnt num">${own[k.id] || 0}건</span>
-      <button class="icon-btn" data-edit="${k.id}" aria-label="${esc(k.name)} 수정">${editIcon}</button>
-      <button class="icon-btn del" data-del="${k.id}" aria-label="${esc(k.name)} 삭제">${delIcon}</button>
-    </div>`).join('') + (kids.length ? '' : `<div class="set-row child"><span class="name" style="color:var(--muted);font-weight:500">＋ 버튼으로 세부 카테고리를 추가하세요</span></div>`) : '');
+      ${btns(c, i, tops.length, `<button class="icon-btn" data-addsub="${c.id}" aria-label="${esc(c.name)}에 세부 카테고리 추가">${plusIcon}</button>`)}
+    </div>` + (open ? kids.map((k, j) => `<div class="set-row child">
+      <span class="name">${k.emoji ? esc(k.emoji) + ' ' : ''}${esc(k.name)}</span>${ord ? '' : `<span class="cnt num">${own[k.id] || 0}건</span>`}
+      ${btns(k, j, kids.length)}
+    </div>`).join('') + (kids.length ? '' : `<div class="set-row child"><span class="name" style="color:var(--muted);font-weight:500">${ord ? '세부 카테고리가 없어요' : '＋ 버튼으로 세부 카테고리를 추가하세요'}</span></div>`) : '');
   }).join('') + `<div class="set-row"><span class="set-toggle"><span class="ico" style="background:${hexA(UNCAT.color, .22)}">${UNCAT.emoji}</span><span class="name">${UNCAT.name}<small>기본 · ${top.none || 0}건</small></span></span></div>`;
   $('#data-note').innerHTML = `기록 ${fmt(db.entries.length)}건이 이 휴대폰 안에만 저장돼 있어요. 휴대폰을 바꾸거나 앱을 지우기 전에는 꼭 <b>백업 파일 내보내기</b>를 해 주세요.`;
 }
@@ -995,7 +1012,19 @@ function deleteCat(cat) {
 }
 $('#cat-del').addEventListener('click', () => { if (editingCat && deleteCat(editingCat)) closeSheet(); });
 $('#cat-add').addEventListener('click', () => openCat());
+$('#cat-order').addEventListener('click', () => { ui.reorder = !ui.reorder; renderSettings(); });
+// 같은 단계(상위끼리, 같은 상위의 세부끼리)에서 한 칸 위/아래로 옮김
+function moveCat(id, dir) {
+  const c = catRaw(id); if (!c) return;
+  const sibs = c.parentId ? childrenOf(c.parentId) : topCats();
+  const other = sibs[sibs.indexOf(c) + dir]; if (!other) return;
+  const a = db.categories.indexOf(c), b = db.categories.indexOf(other);
+  db.categories[a] = other; db.categories[b] = c;
+  save(); renderSettings();
+}
 $('#cat-list').addEventListener('click', e => {
+  const mv = e.target.closest('[data-move]');
+  if (mv) { moveCat(mv.dataset.move, Number(mv.dataset.dir)); return; }
   const tg = e.target.closest('[data-toggle]'), add = e.target.closest('[data-addsub]');
   const ed = e.target.closest('[data-edit]'), dl = e.target.closest('[data-del]');
   if (tg) {
@@ -1051,7 +1080,7 @@ $('#month-label').addEventListener('click', () => {
   ui.sel = ui.sel.startsWith(p) ? '' : (ymd(new Date()).startsWith(p) ? ymd(new Date()) : p + '01');
   render();
 });
-$$('.tab').forEach(t => t.addEventListener('click', () => { ui.tab = t.dataset.tab; ui.openCat = null; ui.openSub = null; render(); window.scrollTo(0, 0); }));
+$$('.tab').forEach(t => t.addEventListener('click', () => { ui.tab = t.dataset.tab; ui.openCat = null; ui.openSub = null; ui.reorder = false; render(); window.scrollTo(0, 0); }));
 $('#cal-grid').addEventListener('click', e => {
   const d = e.target.closest('.day[data-date]'); if (!d) return;
   ui.sel = ui.sel === d.dataset.date ? '' : d.dataset.date;

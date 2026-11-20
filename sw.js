@@ -1,5 +1,5 @@
 // 오프라인에서도 앱이 열리도록 파일을 저장해 둔다. 앱을 고치면 VERSION 숫자를 올린다.
-const VERSION = 'gagyebu-v2';
+const VERSION = 'gagyebu-v3';
 const ASSETS = ['./', './index.html', './parser.js', './manifest.webmanifest',
   './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png'];
 
